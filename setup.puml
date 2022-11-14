@@ -1,0 +1,34 @@
+@startuml
+node "Your laptop" {
+    component mjpgOpenCV [
+        MJPEG OpenCV Server
+        Python/Java
+        https://github.com/artemy/mjpeg-opencv-server
+    ]
+    component "Web browser /\nDesktop client" as wb
+}
+
+node "Raspberry Pi" {
+   component mjpgStreamer [
+       MJPEG Streamer
+       Outputs MJPEG stream
+       from Raspberry Pi camera
+       https://github.com/artemy/mjpeg-streamer-rpi-setup
+   ]
+   component carControl [
+       Car control software
+       Based on
+       https://github.com/artemy/Freenove_4WD_Smart_Car_Kit_for_Raspberry_Pi
+       or
+       https://github.com/artemy/pi4j-freenove-smart-car-samples
+   ]
+}
+
+mjpgStreamer -u-> mjpgOpenCV : MJPEG Stream
+wb <- mjpgOpenCV :Processed MJPEG Stream\nfor visualisation
+mjpgStreamer -u-> wb: MJPEG Stream
+wb -d---> carControl : Telemetry &\nmanual car steering
+mjpgOpenCV -d--> carControl : Steering commands based\n on Computer Vision
+
+mjpgStreamer --[hidden]> carControl
+@enduml
