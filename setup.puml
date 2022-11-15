@@ -1,8 +1,8 @@
 @startuml
 node "Your laptop" {
     component mjpgOpenCV [
-        MJPEG OpenCV Server
-        Python/Java
+        MJPEG OpenCV Server with your computer vision logic
+        (Python/Java)
         https://github.com/artemy/mjpeg-opencv-server
     ]
     component "Web browser /\nDesktop client" as wb
@@ -28,7 +28,7 @@ mjpgStreamer -u-> mjpgOpenCV : MJPEG Stream
 wb <- mjpgOpenCV :Processed MJPEG Stream\nfor visualisation
 mjpgStreamer -u-> wb: MJPEG Stream
 wb -d---> carControl : Telemetry &\nmanual car steering
-mjpgOpenCV -d--> carControl : Steering commands based\n on Computer Vision
+mjpgOpenCV -d--> carControl : Steering commands
 
 mjpgStreamer --[hidden]> carControl
 @enduml
