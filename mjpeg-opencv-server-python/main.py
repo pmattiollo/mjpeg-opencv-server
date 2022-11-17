@@ -8,17 +8,10 @@ from PIL import Image
 
 face_cascade = cv2.CascadeClassifier(r'haarcascade_frontalface_default.xml')
 
-REMOTE_MJPEG_URL = 'http://raspberrypi.local:8000/?action=stream'
+REMOTE_MJPEG_URL = 'http://monsters.local:8000/?action=stream'
 
 
-def face_detect(img):
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    faces = face_cascade.detectMultiScale(gray, 1.3, 5)
-    if len(faces) > 0:
-        for (x, y, w, h) in faces:
-            face_x = float(x + w / 2.0)
-            face_y = float(y + h / 2.0)
-            img = cv2.circle(img, (int(face_x), int(face_y)), int((w + h) / 4), (0, 255, 0), 2)
+def process(img):
     return img
 
 
@@ -35,7 +28,7 @@ class CamHandler(BaseHTTPRequestHandler):
             self.end_headers()
             while not self.to_exit:
                 rc, img = self.capture.read()
-                img = face_detect(img)
+                img = process(img)
                 if not rc:
                     continue
                 imgRGB = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
