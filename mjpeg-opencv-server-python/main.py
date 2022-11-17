@@ -9,58 +9,59 @@ import numpy as np
 
 
 REMOTE_MJPEG_URL = 'http://monsters.local:8000/?action=stream'
-low_t = 100
-high_t = 200
 
-def increase_brightness(img, value=30):
-    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-    h, s, v = cv2.split(hsv)
+def correct_img(img):
+    kernel_size = 5
+    grayscale = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    return cv2.GaussianBlur(grayscale, (kernel_size, kernel_size), 0)
 
-    lim = 255 - value
-    v[v > lim] = 255
-    v[v <= lim] += value
+def detect_edges(img):
+    low_t = 100
+    high_t = 150
+    return cv2.Canny(img, low_t, high_t)
 
-    final_hsv = cv2.merge((h, s, v))
-    img = cv2.cvtColor(final_hsv, cv2.COLOR_HSV2BGR)
-    return img
+def mask(img):
+    height = img.shape[0]
+    width = img.shape[1] - 10
+    vertices = np.array([[(5, height), (5, 200), (100, 150), (300, 150),
+                        (width, 200), (width, height)]], dtype=np.int32)
+    mask = np.zeros_like(img)
+    cv2.fillPoly(mask, vertices, 255)
+    return cv2.bitwise_and(img, img, mask=mask)
+
 
 def draw_lines(img, lines, color=[255, 0, 0], thickness=7):
-    try:
-        for line in lines:
-            for x1, y1, x2, y2 in line:
-                cv2.line(img, (x1, y1), (x2, y2), color, thickness)
-    except:
-        pass
+    if lines is None:
+        return
+    for line in lines:
+        for x1, y1, x2, y2 in line:
+            cv2.line(img, (x1, y1), (x2, y2), color, thickness)
+
+def detect_lines(img):
+    rho = 5
+    theta = np.pi / 180
+    threshold = 15
+    min_line_len = 50
+    max_line_gap = 50
+    return cv2.HoughLinesP(img, rho, theta, threshold, np.array(
+        []), minLineLength=min_line_len, maxLineGap=max_line_gap)
+
 
 
 def process(img):
-    kernel_size = 5
-    grayscale = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    blur = cv2.GaussianBlur(grayscale, (kernel_size, kernel_size), 0)
 
-    height = img.shape[0]
-    width = img.shape[1] -10
-    vertices = np.array([[(5,height),(5, 200), (100, 150), (300, 150),
-                        (width, 200),(width,height)]], dtype=np.int32)
-
-    edges = cv2.Canny(blur, low_t, high_t)
-    mask = np.zeros_like(edges)
-    cv2.fillPoly(mask, vertices, 255)
-    masked_edges = cv2.bitwise_and(edges, edges, mask=mask)
-    rho = 3
-    theta = np.pi / 180
-    threshold = 15
-    min_line_len = 60
-    max_line_gap = 50
-    lines = cv2.HoughLinesP(masked_edges, rho, theta, threshold, np.array(
-        []), minLineLength=min_line_len, maxLineGap=max_line_gap)
+    corrected_img = correct_img(img)
+    edges = detect_edges(corrected_img)
+    masked_img = mask(edges)
+    lines = detect_lines(masked_img)
     result = img.copy()
     draw_lines(result, lines)
 
-    return cv2.vconcat([
-        cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR),
-        cv2.bitwise_and(img, img, mask=mask),
-        cv2.cvtColor(edges, cv2.COLOR_GRAY2BGR),cv2.cvtColor(masked_edges, cv2.COLOR_GRAY2BGR), result])
+    return cv2.hconcat([
+        cv2.cvtColor(corrected_img, cv2.COLOR_GRAY2BGR),
+        cv2.cvtColor(edges, cv2.COLOR_GRAY2BGR),
+        cv2.cvtColor(masked_img, cv2.COLOR_GRAY2BGR),
+        result])
 
 
 class CamHandler(BaseHTTPRequestHandler):
