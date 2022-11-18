@@ -16,22 +16,47 @@ control = Control(REMOTE_CONTROL_URL)
 
 
 def correct_img(img):
+    img_transf = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+    img_transf[:, :, 2] = cv2.equalizeHist(img_transf[:, :, 2])
+    # mask of green (36,25,25) ~ (86, 255,255)
+    # mask = cv2.inRange(hsv, (36, 25, 25), (86, 255,255))
+    # mask = cv2.inRange(img_transf, (0, 0, 36), (255, 255,200))
+
+    # slice the green
+    # imask = mask>0
+    # green = np.zeros_like(img, np.uint8)
+    # green[imask] = img[imask]
+    # img = green
+    img = cv2.cvtColor(img_transf, cv2.COLOR_HSV2BGR)
+    # brightness = 50
+    # contrast = 70
+    # img = np.int16(img)
+    # img = img * (contrast/127+1) - contrast + brightness
+    # img = np.clip(img, 0, 255)
+    # img = np.uint8(img)
     kernel_size = 5
     grayscale = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    return cv2.GaussianBlur(grayscale, (kernel_size, kernel_size), 0)
+    img = cv2.medianBlur(grayscale, kernel_size, 0)
+
+    return img
 
 
 def detect_edges(img):
-    low_t = 100
-    high_t = 150
-    return cv2.Canny(img, low_t, high_t)
+    low_t = 180
+    high_t = 220
+    edges = cv2.Canny(img, low_t, high_t)
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (9, 9))
+    dilated = cv2.dilate(edges, kernel, iterations=2)
+    dilated = cv2.erode(dilated, kernel, iterations=2)
+
+    return dilated
 
 
 def mask(img):
     height = img.shape[0]
     width = img.shape[1] - 10
-    vertices = np.array([[(5, height), (5, 200), (100, 150), (300, 150),
-                        (width, 200), (width, height)]], dtype=np.int32)
+    vertices = np.array([[(-400, height), (100, 150), (300, 150),
+                         (width+400, height)]], dtype=np.int32)
     mask = np.zeros_like(img)
     cv2.fillPoly(mask, vertices, 255)
     return cv2.bitwise_and(img, img, mask=mask)
@@ -45,18 +70,18 @@ def draw_lines(img, lines, color=[255, 0, 0], thickness=7):
 
 
 def detect_lines(img):
-    rho = 5
+    rho = 2
     theta = np.pi / 180
-    threshold = 15
-    min_line_len = 100
-    max_line_gap = 50
+    threshold = 100
+    min_line_len = 60
+    max_line_gap = 20
     lines = cv2.HoughLinesP(img, rho, theta, threshold, np.array(
         []), minLineLength=min_line_len, maxLineGap=max_line_gap)
     left_line = None
     right_line = None
     if lines is not None:
-        accepted_range_low = math.tan(math.pi/180*20)
-        accepted_range_high = math.tan(math.pi/180*70)
+        accepted_range_low = math.tan(math.pi/180*10)
+        accepted_range_high = math.tan(math.pi/180*80)
         lines_collection = list(map(lambda x: (x[0],
                                                (x[0][1] - x[0][3]) /
                                                (x[0][0]-x[0][2]),
@@ -64,8 +89,10 @@ def detect_lines(img):
             math.pow(x[0][1] - x[0][3], 2) + math.pow(x[0][0]-x[0][2], 2))), lines))
         lines_collection = list(filter(lambda x: (abs(x[1]) > accepted_range_low and
                                                   abs(x[1]) < accepted_range_high), lines_collection))
-        left_lines = list(filter(lambda x: x[1] < 0, lines_collection))
-        right_lines = list(filter(lambda x: x[1] > 0, lines_collection))
+        left_lines = list(filter(lambda x: x[1] < 0 and (
+            x[0][0] < 200 or x[0][2] < 200), lines_collection))
+        right_lines = list(filter(lambda x:  x[1] > 0 and (
+            x[0][0] > 200 or x[0][2] > 200), lines_collection))
         if any(left_lines):
             left_line = max(left_lines, key=lambda x: x[2])
         if any(right_lines):
@@ -98,19 +125,24 @@ def line_intersection(line1, line2):
 def act(lines):
     left_line = lines[0]
     right_line = lines[1]
-
+    # sensor = control.get_sensor_data()
+    # print(sensor)
     int = line_intersection(((left_line[0], left_line[1]), (left_line[2], left_line[3])), ((
         right_line[0], right_line[1]), (right_line[2], right_line[3])))
     if int is None:
         control.set_motors(0, 0, 0, 0)
+        print("stop")
         return
 
-    if int[0] > 200:
-        control.set_motors(0, 0, 2000, 2000)
-        print("right")
-    if int[0] < 200:
-        control.set_motors(2000, 2000, 0, 0)
+    if int[0] < 150:
+        control.set_motors(-700, -700, 700, 700)
         print("left")
+    elif int[0] > 250:
+        control.set_motors(700, 700, -700, -700)
+        print("right")
+    else:
+        control.set_motors(1000, 1000, 1000, 1000)
+        print("straight")
 
 
 def process(img):
@@ -120,14 +152,12 @@ def process(img):
     masked_img = mask(edges)
     lines = detect_lines(masked_img)
     act(lines)
-    result = img.copy()
-    draw_lines(result, lines)
+    draw_lines(img, lines)
 
     return cv2.hconcat([
         cv2.cvtColor(corrected_img, cv2.COLOR_GRAY2BGR),
-        cv2.cvtColor(edges, cv2.COLOR_GRAY2BGR),
         cv2.cvtColor(masked_img, cv2.COLOR_GRAY2BGR),
-        result])
+        img])
 
 
 class CamHandler(BaseHTTPRequestHandler):
@@ -155,7 +185,6 @@ class CamHandler(BaseHTTPRequestHandler):
                 self.send_header('Content-length', len(jpg_bytes))
                 self.end_headers()
                 jpg.save(self.wfile, 'JPEG')
-                time.sleep(0.05)
             return
         if self.path.endswith('.html'):
             self.send_response(200)
@@ -175,7 +204,6 @@ def main():
     server = ThreadingHTTPServer((ip, port), CamHandler)
     print("server started at " + ip + ':' + str(port))
     print('find video at http://127.0.0.1:8080/index.html')
-    control.set_motors(0, 0, 0, 0)
     server.serve_forever()
 
 
